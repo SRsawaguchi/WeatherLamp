@@ -7,8 +7,7 @@
 // network
 #define SSID "***"
 #define PASS "***"
-
-#define CONF_HOST "192.168.**.***"
+#define CONF_HOST "***"
 #define CONF_PATH "/ESP8266/config.txt"
 #define HTTP_PORT 80
 #define SERIAL_SPEED 115200
@@ -21,6 +20,7 @@
 #define SUN 0x01
 #define CUL 0x02
 #define RAY 0x04
+#define NET 0x08
 
 // led status
 #define ON HIGH
@@ -57,20 +57,17 @@ String buildUri(String host, String path){
   return uri;
 }
 
-void led_on(int pin){
-  digitalWrite(pin,ON);
-}
-
 void led_write(byte leds){
   digitalWrite(LED_SUN,SUN&leds);
   digitalWrite(LED_CUL,CUL&leds);
   digitalWrite(LED_RAY,RAY&leds);
+  digitalWrite(LED_NET,NET&leds);
 }
 
 //アウトプットの設定
 void setup()
 {
-  int led_state = ON;
+  byte led_stat = 0;
   String weather_icon = "";
   int weather_id = 0;
 
@@ -86,18 +83,26 @@ void setup()
   WiFi.begin(SSID,PASS);
   while(WiFi.status() != WL_CONNECTED){
     delay(100);
-    digitalWrite(LED_NET,led_state);
-    led_state ^= led_state;
+    led_stat = led_stat ^ NET;
+    led_write(led_stat);
   }
-  led_on(LED_NET);
+  led_stat |= NET;
+  led_write(led_stat);
+  
+#ifdef WL_DEBUG
   Serial.println("Wifi connected.");
   Serial.print("IP address : ");
   Serial.println(WiFi.localIP());
+#endif // WL_DEBUG
 
   // get config file
   WiFiClient client;
   if (!client.connect(CONF_HOST,HTTP_PORT)){
+    
+#ifdef WL_DEBUG
     Serial.println(String("connection failed : ") + CONF_HOST);
+#endif // WL_DEBUG
+
     led_write(0);
     return;
   }
@@ -124,9 +129,9 @@ void setup()
       }else if(key.equals("id")){
         g_api_city_id = val;
       }// end if
-      //Serial.print(key + " : " + val);
     }//end if
   }// end while
+  
 #ifdef WL_DEBUG
   Serial.println("host  : " + g_api_host);
   Serial.println("path  : " + g_api_path);
@@ -135,20 +140,24 @@ void setup()
   Serial.println("id    : " + g_api_city_id);
 #endif //WL_DEBUG
 
-  //get weather dat
+  //get weather data
   if( (g_api_host.length() < 5) || (g_api_path.length() < 5)){
+    
 #ifdef WL_DEBUG
     Serial.println("ERR g_api_host :: " + g_api_host);
     Serial.println("ERR g_api_path :: " + g_api_path);
-#endif //WL_DEBUG
+#endif // WL_DEBUG
+
     return;
   }//end if
 
   g_api_host.toCharArray(g_gp_buff,BUFFER_SIZE);
   if (!client.connect(g_gp_buff,HTTP_PORT)){
+    
 #ifdef WL_DEBUG
     Serial.println(String("connection failed : ") + g_api_host);
-#endif //WL_DEBUG
+#endif // WL_DEBUG
+
     led_write(0);
     return;
   }//end if
@@ -161,14 +170,19 @@ void setup()
 #ifdef WL_DEBUG
   Serial.println("Query : " + g_api_path);
 #endif // WL_DEBUG
+
   client.print(buildUri(g_api_host,g_api_path));
   delay(10);
   while(client.available()){
     String line = client.readStringUntil('\r');
+    int idx;
+    
+    line.trim();
+    
 #ifdef WL_DEBUG
     Serial.print(line);
-#endif //WL_DEBUG
-    int idx;
+#endif // WL_DEBUG
+
     idx = line.lastIndexOf("icon");
     if(idx >= 0){
       weather_icon = line.substring(idx+7,idx+9);
@@ -179,7 +193,8 @@ void setup()
   weather_icon.toCharArray(g_gp_buff,BUFFER_SIZE);
   weather_id = atoi(g_gp_buff);
   if(weather_id < sizeof(led_patterns)){
-    led_write(led_patterns[weather_id]);
+    led_stat |= led_patterns[weather_id];
+    led_write(led_stat);
   }// end if
 }
 
